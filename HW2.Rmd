@@ -1,0 +1,163 @@
+---
+title: "HW2"
+author: "KailinXu"
+date: "2024-09-26"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r message=FALSE}
+library(tidyverse)
+library(gtrendsR)
+library(censusapi)
+library(httr)
+library(ggplot2)
+```
+
+```{r}
+res <- gtrends(c("crime", "loans"), 
+               geo = "US-IL", 
+               time = "2020-01-01 2020-12-31", 
+               low_search_volume = TRUE)
+plot(res)
+```
+
+
+Answer the following questions for the keywords "crime" and "loans".  
+Find the mean, median and variance of the search hits for the keywords.
+```{r}
+res_time <- res$interest_over_time
+res_time %>% group_by(keyword) %>% summarise(mean=mean(hits),median=median(hits),
+                                             variance=var(hits))
+```
+
+Which cities (locations) have the highest search frequency for loans?  
+Evergreen Park
+```{r}
+res_city <- res$interest_by_city
+res_city %>% filter(keyword=='loans', !is.na(hits)) %>% arrange(hits) %>% tail(5)
+```
+
+
+Is there a relationship between the search intensities between the two keywords we used?   
+
+There is no significant linear relationship between the search intensity of these two keywords,since the correlation coefficient is -0.1947519, which is a negative correlation close to 0. although there is some negative correlation trend, but the correlation is weak.
+```{r}
+res_2 <- spread(res$interest_over_time, key = 'keyword', value = 'hits', fill=0)
+cor(res_2$crime, res_2$loans)
+plot(res_2$crime, res_2$loans,
+     main = "Relationship Between Search Popularity of 'Crime' and 'Loans'",
+     xlab = "Search Hits for 'Crime'",
+     ylab = "Search Hits for 'Loans'")
+```
+
+Repeat the above for keywords related to covid. Make sure you use multiple keywords like we did above. Try several different combinations and think carefully about words that might make sense within this context.
+```{r}
+mask <- gtrends(c("covid","mask"), 
+               geo = "US-IL", 
+               time = "2020-01-01 2020-12-31", 
+               low_search_volume = TRUE)
+plot(mask)
+```
+
+```{r}
+mask_time <- mask$interest_over_time
+mask_time$hits <- as.numeric(mask_time$hits)
+mask_time %>% group_by(keyword) %>% 
+  summarise(mean=mean(hits,na.rm = TRUE),
+            median=median(hits,na.rm = TRUE),
+            variance=var(hits,na.rm = TRUE))
+```
+
+```{r}
+mask_city <- mask$interest_by_city
+mask_city %>% filter(keyword=='covid', !is.na(hits)) %>% arrange(hits) %>% tail(5)
+```
+
+```{r}
+mask_2 <- spread(mask_time, key = 'keyword',value = 'hits', fill=0)
+cor(mask_2$covid, mask_2$mask)
+plot(mask_2$covid, mask_2$mask,
+     main = "Relationship Between Search Popularity of 'Covid' and 'Mask'",
+     xlab = "Search Hits for 'Covid'",
+     ylab = "Search Hits for 'Mask'")
+```
+
+
+
+```{r}
+cs_key <- read_file("census-key.txt")
+```
+
+```{r}
+acs_il <- getCensus(name = "acs/acs5",
+                    vintage = 2020, 
+                    vars = c("NAME", 
+                             "B01001_001E", 
+                             "B06002_001E", 
+                             "B19013_001E", 
+                             "B19301_001E"), 
+                    region = "place:*", 
+                    regionin = "state:17",
+                    key = cs_key)
+head(acs_il)
+```
+
+```{r}
+acs_il[acs_il == -666666666] <- NA
+```
+
+```{r}
+acs_il <-
+  acs_il %>%
+  rename(pop = B01001_001E, 
+         age = B06002_001E, 
+         hh_income = B19013_001E, 
+         income = B19301_001E)
+```
+
+
+```{r}
+acs_il2 <- separate(acs_il, col = NAME, into = c('location','state'), sep = ',')
+acs_il2$location <- word(acs_il2$location, start = 1, end = -2)
+head(acs_il2)
+```
+
+First, check how many cities don't appear in both data sets, i.e. cannot be matched.Then, create a new data set by joining the Google Trends and the ACS data. Keep only cities that appear in both data sets.  
+
+```{r}
+#should be added?
+res_city_w <- spread(res$interest_by_city, key = 'keyword', value = 'hits')
+unmatch1 <- anti_join(acs_il2, res_city_w, by= 'location')
+unmatch12 <- anti_join(res_city_w,acs_il2,by= 'location')
+nrow(unmatch1)
+nrow(unmatch12)
+match_1 <- inner_join(acs_il2, res_city_w, by = 'location')
+head(match_1)
+```
+
+Compute the mean of the search popularity for both keywords for cities that have an above average median household income and for those that have an below average median household income. When building your pipe, start with creating the grouping variable and then proceed with the remaining tasks. What conclusions might you draw from this?
+```{r}
+avg_hh <- mean(match_1$hh_income, na.rm = TRUE)
+match_1$group <- ifelse(match_1$hh_income>avg_hh,'above','below')
+match_1 %>% group_by(group) %>% summarise(mean_crim = mean(crime,na.rm = TRUE), 
+                                          mean_loan = mean(loans,na.rm = TRUE))
+```
+Is there a relationship between the median household income and the search popularity of the Google trends terms? Describe the relationship and use a scatterplot with qplot().
+```{r}
+res_city_clean <- res_city %>% group_by(location) %>% summarise(total=sum(hits))
+match_2 <- inner_join(acs_il2, res_city_clean, by = 'location')
+qplot(hh_income, total, data=na.omit(match_2),
+      geom = c("point", "smooth"),
+      main = 'relationship between the median household income and the search popularity',
+      xlab = 'income', ylab='hits')
+```
+
+
