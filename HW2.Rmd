@@ -1,6 +1,6 @@
 ---
 title: "HW2"
-author: "KailinXu"
+author: "KailinXu and LingchenMeng"
 date: "2024-09-26"
 output:
   pdf_document: default
@@ -13,6 +13,8 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 ```
 
+[github]()
+
 ```{r message=FALSE}
 library(tidyverse)
 library(gtrendsR)
@@ -21,6 +23,7 @@ library(httr)
 library(ggplot2)
 ```
 
+Pulling from APIs\large
 ```{r}
 res <- gtrends(c("crime", "loans"), 
                geo = "US-IL", 
@@ -66,7 +69,7 @@ mask <- gtrends(c("covid","mask"),
                low_search_volume = TRUE)
 plot(mask)
 ```
-
+The mean, median and variance of the search hits for 'cobid' and 'mask' are as below.
 ```{r}
 mask_time <- mask$interest_over_time
 mask_time$hits <- as.numeric(mask_time$hits)
@@ -75,12 +78,12 @@ mask_time %>% group_by(keyword) %>%
             median=median(hits,na.rm = TRUE),
             variance=var(hits,na.rm = TRUE))
 ```
-
+Pesotum has the highest search frequency for covid.
 ```{r}
 mask_city <- mask$interest_by_city
 mask_city %>% filter(keyword=='covid', !is.na(hits)) %>% arrange(hits) %>% tail(5)
 ```
-
+The correlation between "covid" and "mask" is 0.56059,indicating a moderate positive correlation.
 ```{r}
 mask_2 <- spread(mask_time, key = 'keyword',value = 'hits', fill=0)
 cor(mask_2$covid, mask_2$mask)
@@ -91,7 +94,7 @@ plot(mask_2$covid, mask_2$mask,
 ```
 
 
-
+Google Trends + ACS\large
 ```{r}
 cs_key <- read_file("census-key.txt")
 ```
@@ -123,34 +126,37 @@ acs_il <-
          income = B19301_001E)
 ```
 
-
+We first have to clean NAME so that it has the same structure as location in the search interest by city data. Add a new variable location to the ACS data that only includes city names.
 ```{r}
 acs_il2 <- separate(acs_il, col = NAME, into = c('location','state'), sep = ',')
 acs_il2$location <- word(acs_il2$location, start = 1, end = -2)
 head(acs_il2)
 ```
 
-First, check how many cities don't appear in both data sets, i.e. cannot be matched.Then, create a new data set by joining the Google Trends and the ACS data. Keep only cities that appear in both data sets.  
+First, check how many cities don't appear in both data sets, i.e. cannot be matched. Then, create a new data set by joining the Google Trends and the ACS data. Keep only cities that appear in both data sets.  
 
+1138.
 ```{r}
-#should be added?
 res_city_w <- spread(res$interest_by_city, key = 'keyword', value = 'hits')
 unmatch1 <- anti_join(acs_il2, res_city_w, by= 'location')
 unmatch12 <- anti_join(res_city_w,acs_il2,by= 'location')
-nrow(unmatch1)
-nrow(unmatch12)
+total_unmatched <- nrow(unmatch1) + nrow(unmatch12)
+total_unmatched
 match_1 <- inner_join(acs_il2, res_city_w, by = 'location')
 head(match_1)
 ```
 
-Compute the mean of the search popularity for both keywords for cities that have an above average median household income and for those that have an below average median household income. When building your pipe, start with creating the grouping variable and then proceed with the remaining tasks. What conclusions might you draw from this?
+Compute the mean of the search popularity for both keywords for cities that have an above average median household income and for those that have an below average median household income. When building your pipe, start with creating the grouping variable and then proceed with the remaining tasks. What conclusions might you draw from this?  
+  
+  The search popularity of "crime" and "loans" is slightly higher in high-income cities than in low-income cities. There may be a relationship between income level and search popularity, but the difference is not particularly large.
 ```{r}
 avg_hh <- mean(match_1$hh_income, na.rm = TRUE)
 match_1$group <- ifelse(match_1$hh_income>avg_hh,'above','below')
 match_1 %>% group_by(group) %>% summarise(mean_crim = mean(crime,na.rm = TRUE), 
                                           mean_loan = mean(loans,na.rm = TRUE))
 ```
-Is there a relationship between the median household income and the search popularity of the Google trends terms? Describe the relationship and use a scatterplot with qplot().
+Is there a relationship between the median household income and the search popularity of the Google trends terms? Describe the relationship and use a scatterplot with qplot().  
+As the median household income increases, there is an upward trend in the search popularity. This suggests that cities with higher household incomes may have higher search activity, especially in the high income range.
 ```{r}
 res_city_clean <- res_city %>% group_by(location) %>% summarise(total=sum(hits))
 match_2 <- inner_join(acs_il2, res_city_clean, by = 'location')
@@ -160,4 +166,33 @@ qplot(hh_income, total, data=na.omit(match_2),
       xlab = 'income', ylab='hits')
 ```
 
+Repeat the above steps using the covid data and the ACS data.
+1154 cities don't appear in both data sets.
+```{r}
+covid_2 <- spread(mask$interest_by_city, key = 'keyword', value = 'hits')
+unmatch3 <- anti_join(acs_il2, covid_2, by= 'location')
+unmatch4 <- anti_join(covid_2,acs_il2,by= 'location')
+total_unmatch_covid <- nrow(unmatch3) + nrow(unmatch4)
+total_unmatch_covid
+match_covid <- inner_join(acs_il2, covid_2, by = 'location')
+head(match_covid)
+```
+
+The search popularity of "covid" is slightly higher in high-income cities than in low-income cities. But the situation for "mask" is the opposite.
+```{r}
+avg_hh2 <- mean(match_covid$hh_income, na.rm = TRUE)
+match_covid$group <- ifelse(match_covid$hh_income > avg_hh,'above','below')
+match_covid %>% group_by(group) %>% summarise(mean_covid = mean(covid,na.rm = TRUE), 
+                                          mean_mask = mean(mask,na.rm = TRUE))
+```
+
+There is a positive correlation between median household income and search popularity.
+```{r}
+mask_city_clean <- mask_city %>% group_by(location) %>% summarise(total=sum(hits))
+match_covid2 <- inner_join(acs_il2, mask_city_clean, by = 'location')
+qplot(hh_income, total, data=na.omit(match_covid2),
+      geom = c("point", "smooth"),
+      main = 'relationship between the median household income and the search popularity',
+      xlab = 'income', ylab='hits')
+```
 
